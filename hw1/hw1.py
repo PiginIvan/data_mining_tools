@@ -1,4 +1,9 @@
+import ctypes
+import sys
 import time
+from functools import lru_cache
+from pathlib import Path
+
 import numba
 import numpy as np
 
@@ -93,6 +98,53 @@ def match_timestamps(
     return matching
 
 
+@lru_cache(maxsize=1)
+def _load_cpp_library():
+    if sys.platform == "win32":
+        library_name = "match_timestamps.dll"
+    elif sys.platform == "darwin":
+        library_name = "libmatch_timestamps.dylib"
+    else:
+        library_name = "libmatch_timestamps.so"
+
+    library_path = Path(__file__).with_name(library_name)
+    if not library_path.is_file():
+        raise FileNotFoundError(
+            f"Native library not found: {library_path}. "
+            "Build it with the command in README.md."
+        )
+
+    library = ctypes.CDLL(str(library_path))
+    function = library.match_timestamps_cpp
+    double_pointer = ctypes.POINTER(ctypes.c_double)
+    index_pointer = ctypes.POINTER(ctypes.c_ssize_t)
+    function.argtypes = [
+        double_pointer,
+        ctypes.c_ssize_t,
+        double_pointer,
+        ctypes.c_ssize_t,
+        index_pointer,
+    ]
+    function.restype = None
+    return function
+
+
+def match_timestamps_cpp(
+    timestamps1: np.ndarray, timestamps2: np.ndarray
+) -> np.ndarray:
+    timestamps1 = np.ascontiguousarray(timestamps1, dtype=np.float64)
+    timestamps2 = np.ascontiguousarray(timestamps2, dtype=np.float64)
+    matching = np.zeros(len(timestamps1), dtype=np.intp)
+    _load_cpp_library()(
+        timestamps1.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+        len(timestamps1),
+        timestamps2.ctypes.data_as(ctypes.POINTER(ctypes.c_double)),
+        len(timestamps2),
+        matching.ctypes.data_as(ctypes.POINTER(ctypes.c_ssize_t)),
+    )
+    return matching
+
+
 def benchmark(function, timestamps1, timestamps2, repeats=5):
     samples = []
     for _ in range(repeats):
@@ -127,16 +179,21 @@ def main():
     numba_matching = match_timestamps(timestamps1, timestamps2)
     numba_first_call = time.perf_counter() - start
 
+    cpp_matching = match_timestamps_cpp(timestamps1, timestamps2)
     if not np.array_equal(numpy_matching, numba_matching):
         raise RuntimeError("NumPy and Numba matching results differ")
+    if not np.array_equal(numpy_matching, cpp_matching):
+        raise RuntimeError("NumPy and C++ matching results differ")
 
     numpy_time = benchmark(match_timestamps_numpy, timestamps1, timestamps2)
     numba_time = benchmark(match_timestamps, timestamps1, timestamps2)
+    cpp_time = benchmark(match_timestamps_cpp, timestamps1, timestamps2)
 
     print(f"NumPy current (median of 5): {numpy_time * 1000:.3f} ms")
     print(f"Numba warm (median of 5): {numba_time * 1000:.3f} ms")
+    print(f"C++ native (median of 5): {cpp_time * 1000:.3f} ms")
     print(f"Numba first call (incl. compilation): {numba_first_call * 1000:.3f} ms")
-    print(f"Best time of three: {min(numpy_time, numba_time, numba_first_call) * 1000:.3f} ms")
+    print(f"Fastest warm implementation: {min(numpy_time, numba_time, cpp_time) * 1000:.3f} ms")
 
 
 if __name__ == '__main__':
