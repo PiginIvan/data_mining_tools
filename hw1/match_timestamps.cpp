@@ -8,17 +8,21 @@ extern "C" void match_timestamps_cpp(
     std::intptr_t len2,
     std::intptr_t* matching
 ) {
-    if (len1 == 0) {
+    if (len1 <= 0) {
         return;
     }
     std::fill(matching, matching + len1, 0);
-    if (len2 == 0) {
+    if (len2 <= 0) {
+        std::fill(matching, matching + len1, -1);
         return;
     }
 
     const double overlap_start = std::max(timestamps1[0], timestamps2[0]);
     const double overlap_end = std::min(timestamps1[len1 - 1], timestamps2[len2 - 1]);
     if (overlap_start > overlap_end) {
+        if (timestamps1[0] > timestamps2[len2 - 1]) {
+            std::fill(matching, matching + len1, len2 - 1);
+        }
         return;
     }
 
@@ -45,4 +49,5 @@ extern "C" void match_timestamps_cpp(
             matching[i] = j;
         }
     }
+    std::fill(matching + end, matching + len1, len2 - 1);
 }

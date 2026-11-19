@@ -41,13 +41,19 @@ def match_timestamps_numpy(
     timestamps2[j] and timestamps1[i] is minimal.
     """
     matching = np.zeros(len(timestamps1), dtype=np.intp)
-    if len(timestamps1) == 0 or len(timestamps2) == 0:
+    if len(timestamps1) == 0:
+        return matching
+    if len(timestamps2) == 0:
+        raise ValueError("timestamps2 must contain at least one timestamp")
+
+    if timestamps1[-1] < timestamps2[0]:
+        return matching
+    if timestamps1[0] > timestamps2[-1]:
+        matching.fill(len(timestamps2) - 1)
         return matching
 
     overlap_start = max(timestamps1[0], timestamps2[0])
     overlap_end = min(timestamps1[-1], timestamps2[-1])
-    if overlap_start > overlap_end:
-        return matching
 
     start = np.searchsorted(timestamps1, overlap_start, side="left")
     end = np.searchsorted(timestamps1, overlap_end, side="right")
@@ -59,6 +65,7 @@ def match_timestamps_numpy(
 
     use_right = timestamps2[right] - in_overlap < in_overlap - timestamps2[left]
     matching[start:end] = np.where(use_right, right, left)
+    matching[end:] = len(timestamps2) - 1
     return matching
 
 
@@ -73,13 +80,19 @@ def match_timestamps(
     timestamps2[j] and timestamps1[i] is minimal.
     """
     matching = np.zeros(len(timestamps1), dtype=np.intp)
-    if len(timestamps1) == 0 or len(timestamps2) == 0:
+    if len(timestamps1) == 0:
+        return matching
+    if len(timestamps2) == 0:
+        raise ValueError("timestamps2 must contain at least one timestamp")
+
+    if timestamps1[-1] < timestamps2[0]:
+        return matching
+    if timestamps1[0] > timestamps2[-1]:
+        matching[:] = len(timestamps2) - 1
         return matching
 
     overlap_start = max(timestamps1[0], timestamps2[0])
     overlap_end = min(timestamps1[-1], timestamps2[-1])
-    if overlap_start > overlap_end:
-        return matching
 
     start = np.searchsorted(timestamps1, overlap_start, side="left")
     end = np.searchsorted(timestamps1, overlap_end, side="right")
@@ -94,6 +107,9 @@ def match_timestamps(
             matching[i] = j + 1
         else:
             matching[i] = j
+
+    for i in range(end, len(timestamps1)):
+        matching[i] = len(timestamps2) - 1
 
     return matching
 
@@ -132,6 +148,11 @@ def _load_cpp_library():
 def match_timestamps_cpp(
     timestamps1: np.ndarray, timestamps2: np.ndarray
 ) -> np.ndarray:
+    if len(timestamps1) == 0:
+        return np.empty(0, dtype=np.intp)
+    if len(timestamps2) == 0:
+        raise ValueError("timestamps2 must contain at least one timestamp")
+
     timestamps1 = np.ascontiguousarray(timestamps1, dtype=np.float64)
     timestamps2 = np.ascontiguousarray(timestamps2, dtype=np.float64)
     matching = np.zeros(len(timestamps1), dtype=np.intp)
